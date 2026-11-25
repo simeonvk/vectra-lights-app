@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="bg">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vectra — автоматични светлини</title>
+<!--
+  Настройки на модула през Bluetooth, направо от браузъра (Web Bluetooth).
+  Работи в Chrome на Android и на компютър. Не работи в Safari и на iPhone.
+  Иска https или localhost:
+      python3 -m http.server 8767 --directory app
+      http://localhost:8767/
+  С ?demo в адреса показва примерни данни без модул.
+-->
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --ink: #14181f; --muted: #5d6675; --line: #dde1e7;
+    --accent: #0b5cad; --accent-ink: #ffffff; --ok: #1f7a3a; --warn: #9a5b00; --bad: #b3261e;
+    --field: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101318; --card: #1a1f27; --ink: #e9edf2; --muted: #9aa5b4; --line: #2c3440;
+      --accent: #6fb1f5; --accent-ink: #0c1118; --ok: #6fce8c; --warn: #f0b860; --bad: #ff8a80;
+      --field: #12161c;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 16px 16px 48px; }
+  h1 { font-size: 1.35rem; margin: 8px 0 2px; }
+  h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  h3 { font-size: 0.95rem; margin: 18px 0 8px; color: var(--muted); font-weight: 600; }
+  p { margin: 0 0 10px; }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-top: 14px; }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 7px 0; }
+  .row + .row { border-top: 1px solid var(--line); }
+  .row label, .row .name { flex: 1; }
+  .value { font-variant-numeric: tabular-nums; text-align: right; }
+  button {
+    font: inherit; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    padding: 11px 16px; min-height: 44px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+  select, input[type=number] {
+    font: inherit; color: var(--ink); background: var(--field); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; min-height: 40px; max-width: 12rem;
+  }
+  input[type=number] { width: 7rem; text-align: right; }
+  input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
+  .invalid { border-color: var(--bad); }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.85rem; border: 1px solid var(--line); }
+  .pill.ok { color: var(--ok); border-color: var(--ok); }
+  .pill.warn { color: var(--warn); border-color: var(--warn); }
+  .pill.bad { color: var(--bad); border-color: var(--bad); }
+  .note { border-left: 3px solid var(--line); padding: 2px 0 2px 12px; margin-top: 12px; }
+  .note.bad { border-color: var(--bad); }
+  .note.ok { border-color: var(--ok); }
+  .note.warn { border-color: var(--warn); }
+  code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85rem; word-break: break-all; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Автоматични светлини</h1>
+  <p class="muted">Opel Vectra C · настройки на модула през Bluetooth</p>
+
+  <section class="card" id="unsupported" hidden>
+    <h2>Този браузър няма Bluetooth за уеб страници</h2>
+    <p>Отвори страницата в Chrome на телефон с Android или на компютър. В Safari и на iPhone няма как да стане.</p>
+  </section>
+
+  <section class="card" id="link">
+    <div class="row">
+      <span class="name"><strong>Връзка с модула</strong></span>
+      <span class="pill" id="linkState">няма връзка</span>
+    </div>
+    <p class="muted" id="linkHelp">Включи контакта и остави двигателя спрял: докато модулът управлява светлините, неговият Bluetooth е изключен. При първото свързване телефонът ще поиска шестцифрения код на модула.</p>
+    <div class="actions">
+      <button class="primary" id="connect">Свържи модула</button>
+      <button id="disconnect" hidden>Прекъсни връзката</button>
+    </div>
+    <div class="note bad" id="linkError" hidden></div>
+  </section>
+
+  <section class="card" id="statusCard" hidden>
+    <h2>Състояние</h2>
+    <div class="row"><span class="name">Модул</span><span class="value" id="sCore">—</span></div>
+    <div class="row"><span class="name">Копче за светлините</span><span class="value" id="sPosition">—</span></div>
+    <div class="row"><span class="name">Контакт</span><span class="value" id="sIgnition">—</span></div>
+    <div class="row"><span class="name">Двигател</span><span class="value" id="sEngine">—</span></div>
+    <div class="row"><span class="name">Навън</span><span class="value" id="sDark">—</span></div>
+    <div class="row"><span class="name">Акумулатор</span><span class="value" id="sBattery">—</span></div>
+    <div class="row"><span class="name">Режим</span><span class="value" id="sMode">—</span></div>
+    <div class="row"><span class="name">Включени релета</span><span class="value" id="sRelays">—</span></div>
+    <div class="row" id="sFaultRow" hidden><span class="name">Грешка на изхода</span><span class="value" id="sFault">—</span></div>
+    <div class="note warn" id="sTables" hidden>Модулът е пасивен: таблиците с напреженията на копчето още не са попълнени във фърмуера. Настройките се записват, но той няма да включи нищо.</div>
+    <div class="note warn" id="sPending" hidden>Има нови настройки, които чакат запис. Модулът ще ги запише, щом цяла секунда не управлява светлините, и ще се рестартира.</div>
+  </section>
+
+  <section class="card" id="settingsCard" hidden>
+    <h2>Настройки</h2>
+
+    <div class="row">
+      <label for="moduleEnabled"><strong>Модулът е включен</strong><br><span class="muted">Изключен, не прави нищо и колата е както от завода.</span></label>
+      <input type="checkbox" id="moduleEnabled">
+    </div>
+
+    <h3>Дневни светлини, докато двигателят работи</h3>
+    <div class="row"><label for="drlLights">Светлини</label><select id="drlLights"></select></div>
+    <div class="row"><label for="drlDelayMs">Закъснение след палене, ms<br><span class="muted">от 0 до 10000</span></label><input type="number" id="drlDelayMs" min="0" max="10000" step="100" inputmode="numeric"></div>
+
+    <h3>При включен контакт и спрял двигател</h3>
+    <div class="row"><label for="ignitionLightsEnabled">Включено</label><input type="checkbox" id="ignitionLightsEnabled"></div>
+    <div class="row"><label for="ignitionLights">Светлини</label><select id="ignitionLights"></select></div>
+
+    <h3>Welcome, при отключване</h3>
+    <div class="row"><label for="welcomeEnabled">Включено</label><input type="checkbox" id="welcomeEnabled"></div>
+    <div class="row"><label for="welcomeOnlyDark">Само когато е тъмно</label><input type="checkbox" id="welcomeOnlyDark"></div>
+    <div class="row"><label for="welcomeLights">Светлини</label><select id="welcomeLights"></select></div>
+    <div class="row"><label for="welcomeSeconds">Време, секунди<br><span class="muted">от 1 до 300</span></label><input type="number" id="welcomeSeconds" min="1" max="300" inputmode="numeric"></div>
+
+    <h3>Goodbye, след гасене на двигателя</h3>
+    <div class="row"><label for="goodbyeEnabled">Включено</label><input type="checkbox" id="goodbyeEnabled"></div>
+    <div class="row"><label for="goodbyeOnlyDark">Само когато е тъмно</label><input type="checkbox" id="goodbyeOnlyDark"></div>
+    <div class="row"><label for="goodbyeLights">Светлини</label><select id="goodbyeLights"></select></div>
+    <div class="row"><label for="goodbyeSeconds">Време, секунди<br><span class="muted">от 1 до 300</span></label><input type="number" id="goodbyeSeconds" min="1" max="300" inputmode="numeric"></div>
+
+    <h3>Сензор за светлина</h3>
+    <div class="row"><label for="darkThreshold">Праг за тъмно<br><span class="muted">сурова стойност от сензора</span></label><input type="number" id="darkThreshold" min="0" max="65534" inputmode="numeric"></div>
+    <div class="row"><label for="lightThreshold">Праг за светло<br><span class="muted">трябва да е над прага за тъмно</span></label><input type="number" id="lightThreshold" min="1" max="65535" inputmode="numeric"></div>
+
+    <div class="note bad" id="formError" hidden></div>
+    <div class="actions">
+      <button class="primary" id="save">Запиши в модула</button>
+      <button id="revert">Върни прочетеното от модула</button>
+    </div>
+    <div class="note" id="saveResult" hidden></div>
+    <p class="muted" style="margin-top:14px">Модулът записва настройките, когато не управлява светлините, и се рестартира, за да ги приложи. Връзката прекъсва за няколко секунди.</p>
+    <p class="muted">Блок за запис: <code id="hex">—</code></p>
+  </section>
+</main>
+
+<script type="module">
+import {
+  SERVICE_UUID, STATUS_UUID, CONFIG_UUID, NO_WRITE_YET, WRITE_FAILED, WRITE_RESULT_NAMES,
+  configProblems, decodeConfig, decodeStatus, encodeConfig, fromHex, toHex,
+} from './codec.js';
+
+const $ = (id) => document.getElementById(id);
+const demo = new URLSearchParams(location.search).has('demo');
+
+const LIGHTS = ['Изключени', 'Габарити', 'Къси', 'Къси и габарити'];
+const CORE = ['Пасивен', 'Готов', 'Управлява светлините', 'Изчаква копчето или контакта', 'Грешка'];
+const POSITION = ['Не се чете', '0', 'AUTO', 'Габарити', 'Къси', 'Мъгли'];
+const MODE = ['Покой', 'Welcome', 'Контакт', 'Дневни светлини', 'Goodbye'];
+const FAULT = ['Няма', 'Релетата имат захранване без импулси', 'Захранването на релетата не дойде',
+  'Захранването на релетата падна'];
+const WRITE_ERRORS = {
+  BadLength: 'блокът е с грешна дължина', BadVersion: 'модулът очаква друга версия на настройките',
+  BadFlags: 'има непознат флаг', BadLights: 'избрани са светлини, които модулът не може да включи',
+  BadPolicy: 'непозната политика за яркост', BadDuration: 'времето трябва да е от 1 до 300 секунди',
+  BadDelay: 'закъснението трябва да е до 10000 ms', BadThresholds: 'прагът за тъмно трябва да е под прага за светло',
+  BadReserved: 'резервен байт не е нула',
+};
+const FIELD_NAMES = {
+  drlDelayMs: 'Закъснението след палене трябва да е цяло число от 0 до 10000.',
+  welcomeSeconds: 'Времето за Welcome трябва да е цяло число от 1 до 300.',
+  goodbyeSeconds: 'Времето за Goodbye трябва да е цяло число от 1 до 300.',
+  darkThreshold: 'Прагът за тъмно трябва да е цяло число от 0 до 65535.',
+  lightThreshold: 'Прагът за светло трябва да е цяло число от 0 до 65535.',
+  thresholds: 'Прагът за тъмно трябва да е под прага за светло.',
+};
+const CHECKS = ['moduleEnabled', 'ignitionLightsEnabled', 'welcomeEnabled', 'welcomeOnlyDark', 'goodbyeEnabled',
+  'goodbyeOnlyDark'];
+const SELECTS = ['drlLights', 'ignitionLights', 'welcomeLights', 'goodbyeLights'];
+const NUMBERS = ['drlDelayMs', 'welcomeSeconds', 'goodbyeSeconds', 'darkThreshold', 'lightThreshold'];
+
+let device = null;
+let statusChar = null;
+let configChar = null;
+let fromModule = null;      // the settings last read from the module
+let waitingForResult = false;
+let expectRestart = false;
+
+for (const id of SELECTS) {
+  LIGHTS.forEach((name, value) => $(id).add(new Option(name, String(value))));
+}
+
+function setLink(text, kind) {
+  $('linkState').textContent = text;
+  $('linkState').className = 'pill' + (kind ? ' ' + kind : '');
+}
+
+function showError(text) {
+  $('linkError').textContent = text;
+  $('linkError').hidden = !text;
+}
+
+function readForm() {
+  const c = {};
+  for (const id of CHECKS) c[id] = $(id).checked;
+  for (const id of SELECTS) c[id] = Number($(id).value);
+  for (const id of NUMBERS) c[id] = $(id).value.trim() === '' ? NaN : Number($(id).value);
+  return c;
+}
+
+function fillForm(c) {
+  for (const id of CHECKS) $(id).checked = c[id];
+  for (const id of SELECTS) $(id).value = String(c[id]);
+  for (const id of NUMBERS) $(id).value = String(c[id]);
+  checkForm();
+}
+
+function checkForm() {
+  const c = readForm();
+  const bad = configProblems(c);
+  for (const id of NUMBERS) {
+    $(id).classList.toggle('invalid', bad.includes(id) || (bad.includes('thresholds') && id.endsWith('Threshold')));
+  }
+  const messages = bad.filter((f) => FIELD_NAMES[f]).map((f) => FIELD_NAMES[f]);
+  $('formError').textContent = messages.join(' ');
+  $('formError').hidden = messages.length === 0;
+  $('hex').textContent = bad.length ? '—' : toHex(encodeConfig(c));
+  const unchanged = fromModule && !bad.length && toHex(encodeConfig(c)) === toHex(encodeConfig(fromModule));
+  $('save').disabled = bad.length > 0 || unchanged || (!demo && !configChar);
+  $('revert').disabled = !fromModule || unchanged;
+  return bad.length === 0;
+}
+
+function showSettings(bytes) {
+  const got = decodeConfig(bytes);
+  if (got.error) {
+    showError('Модулът върна настройки, които тази страница не разбира (' + got.error + '). ' +
+      'Вероятно фърмуерът е по-нов от страницата.');
+    return;
+  }
+  fromModule = got.config;
+  fillForm(fromModule);
+  $('settingsCard').hidden = false;
+}
+
+function showStatus(bytes) {
+  const got = decodeStatus(bytes);
+  if (got.error) return;
+  const s = got.status;
+  $('statusCard').hidden = false;
+  $('sCore').textContent = CORE[s.coreStatus] ?? String(s.coreStatus);
+  $('sPosition').textContent = POSITION[s.position] ?? String(s.position);
+  $('sIgnition').textContent = s.ignitionOn ? 'включен' : 'изключен';
+  $('sEngine').textContent = s.engineRunning ? 'работи' : 'спрял';
+  $('sDark').textContent = s.dark ? 'тъмно' : 'светло';
+  $('sBattery').textContent = (s.batteryMv / 1000).toFixed(2).replace('.', ',') + ' V';
+  $('sMode').textContent = MODE[s.controllerMode] ?? String(s.controllerMode);
+  const relays = [0, 1, 2].filter((i) => s.relayMask & (1 << i)).map((i) => i + 1);
+  $('sRelays').textContent = relays.length ? relays.join(', ') : 'няма';
+  $('sFaultRow').hidden = s.fault === 0;
+  $('sFault').textContent = FAULT[s.fault] ?? String(s.fault);
+  $('sTables').hidden = s.setupValid;
+  $('sPending').hidden = !s.settingsPending;
+  if (waitingForResult && s.lastWriteResult !== NO_WRITE_YET) {
+    waitingForResult = false;
+    showWriteResult(s);
+  }
+}
+
+function showWriteResult(s) {
+  const box = $('saveResult');
+  box.hidden = false;
+  if (s.lastWriteResult === 0 && s.settingsPending) {
+    expectRestart = true;
+    box.className = 'note ok';
+    box.textContent = 'Настройките са приети. Модулът ще ги запише, щом не управлява светлините, и ще се рестартира.';
+  } else if (s.lastWriteResult === 0) {
+    box.className = 'note';
+    box.textContent = 'Тези настройки вече са в сила. Няма какво да се записва.';
+  } else if (s.lastWriteResult === WRITE_FAILED) {
+    box.className = 'note bad';
+    box.textContent = 'Модулът прие настройките, но не успя да ги запише в паметта си. Старите остават в сила. Опитай отново.';
+  } else {
+    const name = WRITE_RESULT_NAMES[s.lastWriteResult];
+    box.className = 'note bad';
+    box.textContent = 'Модулът отхвърли настройките: ' + (WRITE_ERRORS[name] ?? 'код ' + s.lastWriteResult) + '. Нищо не е променено.';
+  }
+}
+
+async function openLink() {
+  setLink('свързване…', 'warn');
+  const server = await device.gatt.connect();
+  const service = await server.getPrimaryService(SERVICE_UUID);
+  statusChar = await service.getCharacteristic(STATUS_UUID);
+  configChar = await service.getCharacteristic(CONFIG_UUID);
+  // The first read of a protected value is what makes the phone ask for the code.
+  showSettings(await configChar.readValue());
+  statusChar.addEventListener('characteristicvaluechanged', (e) => showStatus(e.target.value));
+  await statusChar.startNotifications();
+  showStatus(await statusChar.readValue());
+  setLink('свързан', 'ok');
+  $('connect').hidden = true;
+  $('disconnect').hidden = false;
+  showError('');
+  checkForm();
+}
+
+function linkLost() {
+  statusChar = null;
+  configChar = null;
+  $('connect').hidden = false;
+  $('disconnect').hidden = true;
+  $('save').disabled = true;
+  if (expectRestart) {
+    expectRestart = false;
+    setLink('модулът се рестартира…', 'warn');
+    reconnect(5);
+  } else {
+    setLink('няма връзка');
+  }
+}
+
+async function reconnect(tries) {
+  for (let n = 0; n < tries; n++) {
+    await new Promise((r) => setTimeout(r, 3000));
+    if (!device) return;
+    try {
+      await openLink();
+      $('saveResult').className = 'note ok';
+      $('saveResult').textContent = 'Модулът се рестартира с новите настройки.';
+      return;
+    } catch (e) { /* not back yet */ }
+  }
+  setLink('няма връзка');
+  showError('Модулът не се върна. Ако двигателят вече работи, това е очаквано: докато управлява светлините, Bluetooth е изключен. Свържи се пак, когато спреш.');
+}
+
+$('connect').addEventListener('click', async () => {
+  showError('');
+  try {
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SERVICE_UUID] }, { name: 'VectraLights' }],
+      optionalServices: [SERVICE_UUID],
+    });
+  } catch (e) {
+    return;   // the chooser was closed: nothing to say
+  }
+  device.addEventListener('gattserverdisconnected', linkLost);
+  try {
+    await openLink();
+  } catch (e) {
+    setLink('няма връзка');
+    showError('Не успях да се свържа с модула. Провери дали контактът е включен и двигателят е спрял, и дали кодът е въведен вярно. (' + e.message + ')');
+  }
+});
+
+$('disconnect').addEventListener('click', () => {
+  expectRestart = false;
+  if (device && device.gatt.connected) device.gatt.disconnect();
+});
+
+$('save').addEventListener('click', async () => {
+  if (!checkForm()) return;
+  const bytes = encodeConfig(readForm());
+  $('saveResult').hidden = true;
+  if (demo) {
+    $('saveResult').hidden = false;
+    $('saveResult').className = 'note';
+    $('saveResult').textContent = 'Примерен режим: към модула щеше да отиде ' + toHex(bytes) + '.';
+    return;
+  }
+  try {
+    waitingForResult = true;
+    await configChar.writeValueWithResponse(bytes);
+  } catch (e) {
+    waitingForResult = false;
+    $('saveResult').hidden = false;
+    $('saveResult').className = 'note bad';
+    $('saveResult').textContent = 'Не успях да изпратя настройките. Провери връзката и опитай отново. (' + e.message + ')';
+  }
+});
+
+$('revert').addEventListener('click', () => { if (fromModule) fillForm(fromModule); });
+for (const id of [...CHECKS, ...SELECTS, ...NUMBERS]) {
+  $(id).addEventListener('input', checkForm);
+}
+
+if (demo) {
+  setLink('примерен режим', 'warn');
+  $('linkHelp').textContent = 'Примерни данни, без модул. Махни ?demo от адреса за истинска връзка.';
+  $('connect').hidden = true;
+  showSettings(fromHex('013f01000301000014001400f40178056c07'));
+  showStatus(fromHex('0102023b9627000103000000'));   // AUTO, engine running, low beam emulated
+} else if (!navigator.bluetooth) {
+  $('unsupported').hidden = false;
+  $('link').hidden = true;
+}
+</script>
+</body>
+</html>
