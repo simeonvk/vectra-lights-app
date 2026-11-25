@@ -83,7 +83,7 @@
       <span class="name"><strong>Връзка с модула</strong></span>
       <span class="pill" id="linkState">няма връзка</span>
     </div>
-    <p class="muted" id="linkHelp">Включи контакта и остави двигателя спрял: докато модулът управлява светлините, неговият Bluetooth е изключен. При първото свързване телефонът ще поиска шестцифрения код на модула. След грешен или отказан код модулът спира своя Bluetooth, докато не изключиш и включиш контакта.</p>
+    <p class="muted" id="linkHelp">Включи контакта и остави двигателя спрял: докато модулът управлява светлините, неговият Bluetooth е изключен. Модулът се появява няколко секунди след това. При първото свързване телефонът ще поиска шестцифрения код на модула. След грешен или отказан код модулът спира своя Bluetooth, докато не изключиш и включиш контакта.</p>
     <div class="actions">
       <button class="primary" id="connect">Свържи модула</button>
       <button id="disconnect" hidden>Прекъсни връзката</button>
@@ -103,7 +103,7 @@
     <div class="row"><span class="name">Включени релета</span><span class="value" id="sRelays">—</span></div>
     <div class="row" id="sFaultRow" hidden><span class="name">Грешка на изхода</span><span class="value" id="sFault">—</span></div>
     <div class="note warn" id="sTables" hidden>Модулът е пасивен: таблиците с напреженията на копчето още не са попълнени във фърмуера. Настройките се записват, но той няма да включи нищо.</div>
-    <div class="note warn" id="sPending" hidden>Има нови настройки, които чакат запис. Модулът ще ги запише, щом цяла секунда не управлява светлините, и ще се рестартира.</div>
+    <div class="note warn" id="sPending" hidden>Има нови настройки, които чакат запис. Модулът ще ги запише при спрял двигател, щом цяла секунда не управлява светлините, и ще се рестартира.</div>
   </section>
 
   <section class="card" id="settingsCard" hidden>
@@ -144,7 +144,7 @@
       <button id="revert">Върни прочетеното от модула</button>
     </div>
     <div class="note" id="saveResult" hidden></div>
-    <p class="muted" style="margin-top:14px">Модулът записва настройките, когато не управлява светлините, и се рестартира, за да ги приложи. Връзката прекъсва за няколко секунди.</p>
+    <p class="muted" style="margin-top:14px">Модулът записва настройките при спрял двигател, когато не управлява светлините, и се рестартира, за да ги приложи. Връзката прекъсва за няколко секунди.</p>
     <p class="muted">Блок за запис: <code id="hex">—</code></p>
   </section>
 </main>
@@ -278,7 +278,7 @@ function showWriteResult(s) {
   if (s.lastWriteResult === 0 && s.settingsPending) {
     expectRestart = true;
     box.className = 'note ok';
-    box.textContent = 'Настройките са приети. Модулът ще ги запише, щом не управлява светлините, и ще се рестартира.';
+    box.textContent = 'Настройките са приети. Модулът ще ги запише при спрял двигател, щом не управлява светлините, и ще се рестартира.';
   } else if (s.lastWriteResult === 0) {
     box.className = 'note';
     box.textContent = 'Тези настройки вече са в сила. Няма какво да се записва.';
